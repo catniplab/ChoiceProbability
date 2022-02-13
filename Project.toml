@@ -1,0 +1,14 @@
+name = "ChoiceProbability"
+uuid = "21f7c346-059e-4c59-97ff-4c61e1970d7b"
+authors = ["Il Memming Park <memming@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
+GLMNet = "8d5ece8b-de18-5317-b113-243142960cc6"
+HypothesisTests = "09f84164-cd44-5f33-b23f-e6b0d136a0d5"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+MLBase = "f0e99cf1-93fa-52ec-9ecc-5026115318e0"
+QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
