@@ -107,6 +107,14 @@ function CP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::Function)
     return CP(x, y, w)
 end
 
+"""Definition of Linear Population Choice Probability given the linear map
+Try :LDA, :LR, :ENLRCV for fun.
+"""
+function CP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::Symbol)
+    w = eval(Expr(:call, findLinaerMap, x, y));
+    return CP(x, y, w)
+end
+
 "Linear discriminant analysis"
 function LDA(x::AbstractMatrix, y::AbstractMatrix)
     C1 = cov(x')
@@ -140,7 +148,7 @@ function ENLRCV(x::AbstractMatrix, y::AbstractMatrix, alpha=0., nfolds::Int=min(
 end
 
 "Use half of the data for training, and evaluate CP on the other half"
-function half_and_half_CP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::Function)
+function half_and_half_CP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::Union{Function,Symbol})
     n1 = size(x,2);
     n2 = size(y,2);
     n  = n1 + n2;
@@ -169,7 +177,7 @@ function half_and_half_CP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::F
 end
 
 "Divide the data set into nfolds, pool projections on test sets and returns CP on the combined pool"
-function pooledCP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::Function; nfolds=nfolds::Int=5)
+function pooledCP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::Union{Function,Symbol}; nfolds=nfolds::Int=5)
     n1 = size(x,2);
     n2 = size(y,2);
     n  = n1 + n2;
@@ -198,7 +206,7 @@ function pooledCP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::Function;
 end
 
 "Bias correction using Jackknife. This is slow for large sample sizes."
-function jackknifeCP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::Function)
+function jackknifeCP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::Union{Function,Symbol})
     n1 = size(x,2);
     n2 = size(y,2);
     
