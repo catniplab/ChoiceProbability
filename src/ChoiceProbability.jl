@@ -4,8 +4,7 @@ between neurons and a binary behavioral outcome measurement.
 "
 module ChoiceProbability
 
-using Random
-using Distributions
+using Random, Distributions
 using HypothesisTests: tiedrank_adj
 using LinearAlgebra, GLM, GLMNet, MLBase
 using QuadGK: quadgk
@@ -13,6 +12,7 @@ using QuadGK: quadgk
 export CP
 export invCP_normal
 export half_and_half_CP, pooledCP, jackknifeCP
+export invCP_normal, invCP_search
 
 "Traditional CP estimator for 1D case"
 function CP(x::AbstractVector, y::AbstractVector)
@@ -59,6 +59,47 @@ CP(d1::ContinuousUnivariateDistribution, d2::DiscreteUnivariateDistribution, α:
 
 "Returns mean difference of standard Normal distributions to achieve desired CP"
 invCP_normal = cp -> invlogcdf(Normal(), log(cp)) * sqrt(2)
+
+struct NotFoundError <: Exception end
+
+"""Find the parameter that yields target CP via linear interpolation search
+invCP(targetCP, baseDistribution, parameter -> targetDistribution, parameter range left, right)
+it assumes that CP increases as parameter increases in value.
+
+Use invCP_normal if you have two normal distributions.
+"""
+function invCP_search(targetCP::T, d1::Distribution, d2fun::Function, θ_0::Real, θ_1::Real, tol::Real=1e-3, maxEval::Number=50, cp_0=nothing, cp_1=nothing)::T where T<:Real
+    if maxEval < 1
+        throw(NotFoundError((θ_0, θ_1, cp_0, cp_1), "Ran out of evaluation bound"))
+    end
+
+    if isnothing(cp_0)
+        cp_0 = CP(d1, d2fun(θ_0))
+    end
+
+    if isnothing(cp_1)
+        cp_1 = CP(d1, d2fun(θ_1))
+    end
+
+    if cp_0 > targetCP
+        throw(DomainError(cp_0, "CP at left boundary must be less than targetCP"))
+    elseif cp_1 < targetCP
+        throw(DomainError(cp_1, "CP at right boundary must be greater than targetCP"))
+    end
+
+    θ_new = (targetCP - cp_0) * (θ_1 - θ_0) / (cp_1 - cp_0)
+    cp_new = CP(d1, d2fun(θ_new))
+
+    if abs(cp_new - targetCP) <= tol
+        return θ_new
+    end
+
+    if cp_new < targetCP
+        return invCP_search(targetCP, d1, d2fun, θ_new, θ_1, tol, maxEval-1, cp_new, cp_1)
+    else
+        return invCP_search(targetCP, d1, d2fun, θ_0, θ_new, tol, maxEval-1, cp_0, cp_new)
+    end
+end
 
 "Definition of Linear Population Choice Probability given the linear map"
 function CP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::Function)

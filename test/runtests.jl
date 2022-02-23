@@ -17,6 +17,13 @@ using Distributions
     @test CP(Normal(20,0.1), Poisson(0.1)) < 1e-4
 end
 
+@testset "Inverse CP lookup" begin
+    @test invCP_normal(0.5) == 0.
+    @test abs(invCP_normal(0.7) - 0.74161) < 1e-4
+    @test abs(invCP_search(0.7, Normal(), μ -> Normal(μ, 1), 0, 10) - 0.74161) < 2e-3
+    @test abs(CP(Poisson(2), Poisson(invCP_search(0.7, Poisson(2), λ -> Poisson(λ), 1, 20))) - 0.7) < 1e-3
+end
+
 @testset "Linear CP" begin
     @test 0.5 ≈ CP(ones(4,10), ones(4,200), zeros(4))
 end
