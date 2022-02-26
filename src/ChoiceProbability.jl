@@ -101,18 +101,19 @@ function invCP_search(targetCP::T, d1::Distribution, d2fun::Function, θ_0::Real
     end
 end
 
-"Definition of Linear Population Choice Probability given the linear map"
-function CP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::Function)
-    w = findLinaerMap(x, y);
-    return CP(x, y, w)
+"""Definition of Linear Population Choice Probability given the linear map
+Try a function that does regression, or internally defined :LDA, :LR, :ENLRCV for fun.
+"""
+function CP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::Union{Function,Symbol})
+    return CP(x, y, execFindLinearMap(findLinaerMap, x, y))
 end
 
-"""Definition of Linear Population Choice Probability given the linear map
-Try :LDA, :LR, :ENLRCV for fun.
-"""
-function CP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::Symbol)
-    w = eval(Expr(:call, findLinaerMap, x, y));
-    return CP(x, y, w)
+@inline function execFindLinearMap(findLinaerMap::Symbol, x::AbstractMatrix, y::AbstractMatrix)
+    return eval(Expr(:call, findLinaerMap, x, y))
+end
+
+@inline function execFindLinearMap(findLinaerMap::Function, x::AbstractMatrix, y::AbstractMatrix)
+    return findLinaerMap(x, y)
 end
 
 "Linear discriminant analysis"
@@ -129,9 +130,17 @@ end
 function LR(x::AbstractMatrix, y::AbstractMatrix)
     X = copy(hcat(x, y)');
     Y = vcat(zeros(size(x,2)), ones(size(y,2)));
-    m = glm(X, Y, Binomial(), LogitLink());
-    w = GLM.coef(m)
-    return w
+    try
+        m = glm(X, Y, Binomial(), LogitLink());
+        return GLM.coef(m)
+    catch e
+        # Convert Errors to Warnings...
+        if typeof(e) <: PosDefException
+            @warn("You data is collinear. That happens. GLM package is stupid.")
+        end
+        @warn("GLM had an issue $e")
+        return zeros(size(x,1))
+    end
 end
 
 "Elastic net logistic regression with crossvalidation"
@@ -140,11 +149,17 @@ function ENLRCV(x::AbstractMatrix, y::AbstractMatrix, alpha=0., nfolds::Int=min(
     n2 = size(y,2);
     X = copy(hcat(x, y)');
     Yglmnet = zeros(n1+n2, 2);
-    Yglmnet[1:n1, 1] .= 1;
-    Yglmnet[n1+1:end, 2] .= 1;
-    cv = glmnetcv(X, Yglmnet, Binomial(), alpha=alpha, nfolds=nfolds)
-    w = GLMNet.coef(cv)
-    return w
+    @inbounds Yglmnet[1:n1, 1] .= 1;
+    @inbounds Yglmnet[n1+1:end, 2] .= 1;
+
+    try
+        cv = glmnetcv(X, Yglmnet, Binomial(), alpha=alpha, nfolds=nfolds)
+        return GLMNet.coef(cv)
+    catch e
+        # Convert Errors to Warnings...
+        @warn("GLMNet had an issue $e")
+        return zeros(size(x,1))
+    end
 end
 
 "Use half of the data for training, and evaluate CP on the other half"
@@ -159,19 +174,19 @@ function half_and_half_CP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::U
     outerCVScheme = MLBase.StratifiedKfold(classes, nfolds)
     
     train_inds = iterate(outerCVScheme)[1]
-    xidx = train_inds[train_inds .<= n1]
-    yidx = train_inds[train_inds .> n1] .- n1
+    @inbounds xidx = train_inds[train_inds .<= n1]
+    @inbounds yidx = train_inds[train_inds .> n1] .- n1
     
     # train on train
-    w = findLinaerMap(x[:,xidx], y[:,yidx])
+    w = execFindLinearMap(findLinaerMap, x[:,xidx], y[:,yidx])
     
     test_inds = setdiff(1:n, train_inds)
-    xidx2 = test_inds[test_inds .<= n1]
-    yidx2 = test_inds[test_inds .> n1] .- n1
+    @inbounds xidx2 = test_inds[test_inds .<= n1]
+    @inbounds yidx2 = test_inds[test_inds .> n1] .- n1
 
     # project test
-    xTest = w' * x[:,xidx2];
-    yTest = w' * y[:,yidx2];
+    @inbounds xTest = w' * x[:,xidx2];
+    @inbounds yTest = w' * y[:,yidx2];
     
     return CP(xTest', yTest')
 end
@@ -190,15 +205,15 @@ function pooledCP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::Union{Fun
     @inbounds for (i, train_inds) ∈ enumerate(outerCVScheme)
         test_inds = setdiff(1:n, train_inds)
         # train on train
-        xidx = train_inds[train_inds .<= n1]
-        yidx = train_inds[train_inds .> n1] .- n1
-        w = findLinaerMap(x[:,xidx], y[:,yidx])
+        @inbounds xidx = train_inds[train_inds .<= n1]
+        @inbounds yidx = train_inds[train_inds .> n1] .- n1
+        w = execFindLinearMap(findLinaerMap, x[:,xidx], y[:,yidx])
         # project test
-        xidx2 = test_inds[test_inds .<= n1]
-        yidx2 = test_inds[test_inds .> n1] .- n1
+        @inbounds xidx2 = test_inds[test_inds .<= n1]
+        @inbounds yidx2 = test_inds[test_inds .> n1] .- n1
 
-        xTest[i] = w' * x[:,xidx2];
-        yTest[i] = w' * y[:,yidx2];
+        @inbounds xTest[i] = w' * x[:,xidx2];
+        @inbounds yTest[i] = w' * y[:,yidx2];
     end
 
     # evaluate CP on pooled test
@@ -218,8 +233,8 @@ function jackknifeCP(x::AbstractMatrix, y::AbstractMatrix, findLinaerMap::Union{
     xidx = 1:n1
     yidx = 1:n2
     for k = 1:nLOO
-        xLOO = view(x, :, filter(!isequal(k), xidx))
-        yLOO = view(y, :, filter(!isequal(k), yidx))
+        @inbounds xLOO = view(x, :, filter(!isequal(k), xidx))
+        @inbounds yLOO = view(y, :, filter(!isequal(k), yidx))
         jkkCP[k] = CP(xLOO, yLOO, findLinaerMap)
     end
     vCP = var(jkkCP) * (nLOO - 1)^2 / nLOO # boostrap estimated variance
