@@ -136,9 +136,30 @@ function LR(x::AbstractMatrix, y::AbstractMatrix)
     catch e
         # Convert Errors to Warnings...
         if typeof(e) <: PosDefException
-            @warn("You data is collinear. That happens. GLM package is stupid.")
+            @warn("You data is collinear. That happens. GLM package is stupid. Calling GLMNet")
+            # Awaiting https://github.com/JuliaStats/GLM.jl/pull/340 to be merged
+            return LRnet(x, y)
         end
         @warn("GLM had an issue $e")
+        return zeros(size(x,1))
+    end
+end
+
+"Logistic regression using GLMNet. This is slower but more robust at times."
+function LRnet(x::AbstractMatrix, y::AbstractMatrix)
+    n1 = size(x,2);
+    n2 = size(y,2);
+    X = copy(hcat(x, y)');
+    Yglmnet = zeros(n1+n2, 2);
+    @inbounds Yglmnet[1:n1, 1] .= 1;
+    @inbounds Yglmnet[n1+1:end, 2] .= 1;
+
+    try
+        path = glmnet(X, Yglmnet, Binomial(), alpha=0, lambda = [0.])
+        return path.betas[:,end]
+    catch e
+        # Convert Errors to Warnings...
+        @warn("GLMNet had an issue $e")
         return zeros(size(x,1))
     end
 end
