@@ -1,10 +1,14 @@
+"""
+Experiments to compare the estimators
+"""
+
 using Revise
 using ChoiceProbability
 using Random, Distributions, LinearAlgebra
 using JLD2, Dates
 using ProgressMeter
 
-nMC = 100;
+nMC = 200;
 cpr = 0.5:0.05:0.99;
 dim = 20;
 
@@ -19,7 +23,7 @@ maps = [
     ((x, y) -> pooledCP(x, y, :ENLRCV, nfolds=5), "Pooled L2 LR (5-fold)"),
 ];
 
-nr = [50, 100, 200, 400, 800, 1600];
+nr = [50, 100, 200, 400, 800, 1600, 3200];
 cpea = Array{Any}(undef, (nMC, length(nr), length(cpr), length(maps)));
 
 function mtNormalExperiment!(dim, maps, nMC, cpr, nr, cpea)
@@ -49,29 +53,29 @@ function fastBinaryPoissonRand(λ, rng::Random.AbstractRNG = Random.GLOBAL_RNG)
 	return (Random.randexp(rng) < λ) ? 1 : 0
 end
 
-function linearPop(z, C)
-    b = -2.5
+function linearPop(z, C, nBins)
+    b = -2
     λ = exp.(C * z' .+ b)
     y = zeros(UInt16, size(λ))
-    nT = 20
-    for t = 1:nT
+    for t = 1:nBins
         y += fastBinaryPoissonRand.(λ)
     end
     return y
 end
 
 function mtPoissonExperiment!(dim, maps, nMC, cpr, nr, cpea)
+    nBins = 40;
     for (kn, n) ∈ enumerate(nr)
         @showprogress for (ktcp, tcp) ∈ enumerate(cpr)
             mud = invCP_normal(tcp);
-            d1 = Normal(0, 1)
-            d2 = Normal(mud, 1)
-            C = randn(dim)
+            d1 = Normal(-1, 1)
+            d2 = Normal(mud-1, 1)
+            C = randn(dim) / 2
             Threads.@threads for k ∈ 1:nMC
                 z1 = rand(d1, n);
                 z2 = rand(d2, n);
-                x1 = linearPop(z1, C);
-                x2 = linearPop(z2, C);
+                x1 = linearPop(z1, C, nBins);
+                x2 = linearPop(z2, C, nBins);
                 @inbounds for (kfh, (fh, name)) ∈ enumerate(maps)
                     cpea[k, kn, ktcp, kfh] = fh(x1, x2);
                 end
@@ -168,7 +172,7 @@ end
 dateStr = Dates.format(Dates.now(), dateformat"yyyymmdd_HHMMSS")
 codeStr = split(split(@__FILE__, '/')[end], '.')[1]
 
-@time mtPoissonExperiment!(dim, maps, nMC, cpr, nr, cpea)
+@time nBins = mtPoissonExperiment!(dim, maps, nMC, cpr, nr, cpea)
 jldsave("$(dateStr)_$(codeStr)_Poisson_output.jld2"; maps, nr, cpea, nMC, cpr, dim)
 
 p = plotResults(dim, maps, nMC, cpr, nr, cpea)
@@ -182,3 +186,31 @@ savefig(p, "$(dateStr)_$(codeStr)_Normal_output.pdf")
 
 #jld = load("20220226_105113_exp1_Poisson_output.jld2")
 #plotResults(dim, maps, nMC, cpr, nr, jld["cpea"])
+
+"Check if the Poisson population is reasonable"
+n = 1000
+nBins = 40
+p = Array{Any}(undef, length(cpr))
+for (ktcp, tcp) ∈ enumerate(cpr)
+#tcp = 0.7
+    mud = invCP_normal(tcp);
+    @show mud
+    d1 = Normal(-1, 1)
+    d2 = Normal(mud-1, 1)
+    C = randn(dim) / 2
+    z1 = rand(d1, n);
+    z2 = rand(d2, n);
+    x1 = linearPop(z1, C, nBins);
+    x2 = linearPop(z2, C, nBins);
+    println("$(tcp)")
+    
+    h1 = [count(x1 .== n) for n in 0:nBins]; h1 /= sum(h1);
+    h2 = [count(x2 .== n) for n in 0:nBins]; h2 /= sum(h2);
+    p[ktcp] = groupedbar(0:nBins, [h1 h2], bar_position = :dodge, bar_width=0.7, linewidth=0)
+    xlabel!("spike count")
+    ylabel!("probability")
+    @show jackknifeCP(x1, x2, :LR)[1]
+end
+plot!(p..., size=(1000,800),
+titlefontsize=8,
+legend = false, layout = grid(5,2))
